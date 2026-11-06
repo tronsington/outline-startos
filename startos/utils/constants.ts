@@ -20,5 +20,12 @@ export const DB_MIGRATE_CMD: [string, ...string[]] = [
   'node',
   'node_modules/.bin/sequelize',
   'db:migrate',
+  // 1.11.0:2 — upstream's server/config/database.js enables TLS under the
+  // `production` config block, and the sidecar is plain TCP. `--env` picks the
+  // TLS-free sibling config for the CLI *without* touching NODE_ENV, which
+  // Outline validates against development/production/staging/test and child
+  // migration scripts inherit.
+  '--env',
+  'production-ssl-disabled',
 ]
 export const OUTLINE_WORKDIR = '/opt/outline'

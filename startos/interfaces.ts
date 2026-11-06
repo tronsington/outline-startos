@@ -44,7 +44,15 @@ export function getOutlineAppUrls(effects: T.Effects): Promise<string[]> {
           .find((i) => i.id === webInterfaceId)
       return iface
         ? iface.addressInfo
-            .matchesAny([{ kind: 'domain' }, { kind: 'plugin' }])
+            // 1.11.0:2 — include the box's own LAN addresses (`ip`, `mdns`).
+            // Without them a LAN-only install has an empty app-address list and
+            // the install-time critical task cannot be resolved at all.
+            .matchesAny([
+              { kind: 'domain' },
+              { kind: 'plugin' },
+              { kind: 'ip' },
+              { kind: 'mdns' },
+            ])
             .format()
         : []
     })

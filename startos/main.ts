@@ -56,14 +56,11 @@ export const main = sdk.setupMain(async ({ effects }) => {
     : {}
 
   const outlineEnv = {
-    // 1.11.0:1 — upstream's `production` config forces TLS to Postgres
-    // (server/config/database.js: dialectOptions.ssl under `production`).
-    // The sidecar is plain-TCP on loopback, so every connection died with
-    // "The server does not support SSL connections". Upstream ships exactly
-    // one escape hatch for that shape — the `production-ssl-disabled` env —
-    // and its code only branches on `!== 'test'` / `=== 'development'`, so
-    // nothing else changes.
-    NODE_ENV: 'production-ssl-disabled',
+    // Stays `production`: Outline validates NODE_ENV against
+    // development/production/staging/test. The TLS-free Postgres path is the
+    // sequelize CLI's `--env production-ssl-disabled` (see DB_MIGRATE_CMD) and
+    // PGSSLMODE=disable for the app's own runtime connection.
+    NODE_ENV: 'production',
     URL: appUrl,
     PORT: String(SERVER_PORT),
     SECRET_KEY: store?.secretKey ?? '',
@@ -223,13 +220,11 @@ export const main = sdk.setupMain(async ({ effects }) => {
         // .sequelizerc resolves config/migrations relative to the cwd;
         // /opt/outline is the image WORKDIR.
         cwd: OUTLINE_WORKDIR,
-        env: {
-          // Same reason as the server daemon above: `production` forces SSL.
-          // PGSSLMODE alone does not cover it — the switch is the env name.
-          NODE_ENV: 'production-ssl-disabled',
-          DATABASE_URL: dbUrl,
-          PGSSLMODE: 'disable',
-        },
+        // The whole app env, not just DATABASE_URL: several migrations spawn
+        // helper scripts that import the server and validate the full
+        // environment (SECRET_KEY, UTILS_SECRET, REDIS_URL, URL). With a bare
+        // DB URL they exit 1 and the oneshot dies.
+        env: outlineEnv,
       },
       requires: ['postgres'],
     })
