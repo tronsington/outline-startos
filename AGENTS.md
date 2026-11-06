@@ -37,3 +37,36 @@ StartOS service-package repository for [Outline](https://github.com/outline/outl
 - /\_health probe across a cold first boot with migrations (grace: 120 s).
 - OIDC end-to-end against a real provider (the env names were verified against
   upstream's `.env.sample`, not against live sign-in).
+
+## First-boot and OIDC traps (learned 2026-11-06, released as 1.11.0:2)
+- **Postgres SSL.** `server/config/database.js` puts `dialectOptions.ssl` under the `production`
+  config block only, and the sidecar is plain TCP, so `NODE_ENV=production` fails every connection
+  with "The server does not support SSL connections". Do **not** set
+  `NODE_ENV=production-ssl-disabled` — Outline derives `ENVIRONMENT` from `NODE_ENV` and only accepts
+  development/production/staging/test, so the app then dies on env validation. Correct shape: keep
+  `NODE_ENV=production`, put the TLS-free config on the CLI only —
+  `sequelize db:migrate --env production-ssl-disabled` — and keep `PGSSLMODE=disable` for the app.
+- **The migrate oneshot needs the full app env.** Several migrations spawn helper scripts
+  (`build/server/scripts/*.js`) that `require('./bootstrap')` and validate SECRET_KEY, UTILS_SECRET,
+  REDIS_URL and URL. With only `DATABASE_URL` they exit 1 and take the oneshot with them.
+- **The app-address list must include LAN addresses.** `getOutlineAppUrls` matched only
+  `domain`/`plugin`; on a LAN-only box the list was empty and the install-time critical task could
+  not be resolved at all. It now also matches `ip` and `mdns`.
+- **Testing migrations without credentials:** `psql -U postgres` works over the local socket in the
+  package's own Postgres, so a throwaway role+database can be migrated for real:
+  `CREATE ROLE migtest LOGIN PASSWORD '…' CREATEDB; CREATE DATABASE migtest OWNER migtest;` then run
+  the migrate command against it. Drop both afterwards.
+- **Gitea as the IdP (worked, 2026-11-06).**
+  - Create the app: `POST /api/v1/user/applications/oauth2` — the documented-looking
+    `/api/v1/user/applications` returns 404 on Gitea 28.
+  - The confidentiality field is **`confidential_client: true`**. Sending `confidential` is silently
+    ignored, the client is created *public*, Gitea then demands PKCE, and Outline's generic OIDC
+    cannot do PKCE → `OAuth error during authentication: PKCE is required for public clients`.
+  - Endpoints: auth `/login/oauth/authorize`, token `/login/oauth/access_token`, userinfo
+    `/login/oauth/userinfo`; `usernameClaim` = `preferred_username`. Gitea's discovery doc advertises
+    `sub`/`email`/`email_verified`, so claims line up.
+- **Proving a real sign-in without a browser.** With a Gitea session cookie jar: `GET <app>/auth/oidc`
+  → Gitea consent page → POST the hidden fields (`client_id`, `state`, `scope`, `nonce`,
+  `redirect_uri`, `granted=true`) to `/login/oauth/grant` → the callback creates the user. Verify from
+  the box, not the UI: log line `users.signin` with `{"name":…,"service":"oidc"}` and the row in
+  `users` (first user gets `admin`).
