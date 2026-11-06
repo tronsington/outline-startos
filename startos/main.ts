@@ -56,7 +56,14 @@ export const main = sdk.setupMain(async ({ effects }) => {
     : {}
 
   const outlineEnv = {
-    NODE_ENV: 'production',
+    // 1.11.0:1 — upstream's `production` config forces TLS to Postgres
+    // (server/config/database.js: dialectOptions.ssl under `production`).
+    // The sidecar is plain-TCP on loopback, so every connection died with
+    // "The server does not support SSL connections". Upstream ships exactly
+    // one escape hatch for that shape — the `production-ssl-disabled` env —
+    // and its code only branches on `!== 'test'` / `=== 'development'`, so
+    // nothing else changes.
+    NODE_ENV: 'production-ssl-disabled',
     URL: appUrl,
     PORT: String(SERVER_PORT),
     SECRET_KEY: store?.secretKey ?? '',
@@ -217,7 +224,9 @@ export const main = sdk.setupMain(async ({ effects }) => {
         // /opt/outline is the image WORKDIR.
         cwd: OUTLINE_WORKDIR,
         env: {
-          NODE_ENV: 'production',
+          // Same reason as the server daemon above: `production` forces SSL.
+          // PGSSLMODE alone does not cover it — the switch is the env name.
+          NODE_ENV: 'production-ssl-disabled',
           DATABASE_URL: dbUrl,
           PGSSLMODE: 'disable',
         },
